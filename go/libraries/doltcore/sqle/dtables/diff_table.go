@@ -43,6 +43,7 @@ const (
 	fromCommit     = "from_commit"
 	toCommitDate   = "to_commit_date"
 	fromCommitDate = "from_commit_date"
+	changedColumns = "changed_columns"
 
 	diffTypeColName  = "diff_type"
 	diffTypeAdded    = "added"
@@ -926,7 +927,7 @@ func CalculateDiffSchema(fromSch, toSch schema.Schema) (schema.Schema, error) {
 		return nil, err
 	}
 
-	cols := make([]schema.Column, toSch.GetAllCols().Size()+fromSch.GetAllCols().Size()+1)
+	cols := make([]schema.Column, toSch.GetAllCols().Size()+fromSch.GetAllCols().Size()+2)
 
 	i := 0
 	err = toSch.GetAllCols().Iter(func(tag uint64, col schema.Column) (stop bool, err error) {
@@ -957,7 +958,8 @@ func CalculateDiffSchema(fromSch, toSch schema.Schema) (schema.Schema, error) {
 		return nil, err
 	}
 
-	cols[len(cols)-1] = schema.NewColumn(diffTypeColName, schema.DiffTypeTag, types.StringKind, false)
+	cols[len(cols)-2] = schema.NewColumn(diffTypeColName, schema.DiffTypeTag, types.StringKind, false)
+	cols[len(cols)-1] = schema.NewColumn(changedColumns, schema.ColumnsChangedTag, types.StringKind, false)
 
 	return schema.UnkeyedSchemaFromCols(schema.NewColCollection(cols...)), nil
 }

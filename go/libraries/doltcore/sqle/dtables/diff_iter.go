@@ -15,8 +15,10 @@
 package dtables
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/dolthub/go-mysql-server/sql"
@@ -135,12 +137,12 @@ func (itr *diffRowItr) Next(ctx *sql.Context) (sql.Row, error) {
 	_, hasTo := toAndFromRows[diff.To]
 	_, hasFrom := toAndFromRows[diff.From]
 
-	r, err = r.SetColVal(itr.toCommitInfo.nameTag, types.String(itr.toCommitInfo.name), itr.sch)
+	r, err = r.SetColVal(itr.toCommitInfo.nameTag, itr.toCommitInfo.name, itr.sch)
 	if err != nil {
 		return nil, err
 	}
 
-	r, err = r.SetColVal(itr.fromCommitInfo.nameTag, types.String(itr.fromCommitInfo.name), itr.sch)
+	r, err = r.SetColVal(itr.fromCommitInfo.nameTag, itr.fromCommitInfo.name, itr.sch)
 
 	if err != nil {
 		return nil, err
@@ -419,8 +421,8 @@ func (itr prollyDiffIter) getDiffRow(ctx context.Context, dif tree.Diff) (row sq
 	} else if tLen == 0 && dif.Type == tree.RemovedDiff {
 		tLen = fLen
 	}
-	// 2 commit names, 2 commit dates, 1 diff_type
-	row = make(sql.Row, fLen+tLen+5)
+	// 2 commit names, 2 commit dates, 1 diff_type, 1 changed_columns
+	row = make(sql.Row, fLen+tLen+6)
 
 	// todo (dhruv): implement warnings for row column value coercions.
 
@@ -446,8 +448,56 @@ func (itr prollyDiffIter) getDiffRow(ctx context.Context, dif tree.Diff) (row sq
 	row[idx] = itr.fromCm.name
 	row[idx+1] = maybeTime(itr.fromCm.ts)
 	row[idx+2] = diffTypeString(dif)
+	row[idx+3] = convertStringSliceToJsonArray(itr.calculateChangedColumns(dif))
 
 	return row, nil
+}
+
+// convertStringSliceToJsonArray converts the specified |slice| into a string JSON array.
+func convertStringSliceToJsonArray(slice []string) string {
+	// TODO: Should use a JSON type if we're going to send this back here
+	sb := strings.Builder{}
+	sb.WriteString("[")
+	for i, s := range slice {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString(s)
+	}
+	sb.WriteString("]")
+	return sb.String()
+}
+
+// calculateChangedColumns returns the names of the columns that changed in |diff|. If a diff is an add or a delete,
+// all the columns in the "to" schema are returned. If the diff is an update, only the individual columns that were
+// updated are returned.
+func (itr prollyDiffIter) calculateChangedColumns(diff tree.Diff) []string {
+	changedColumns := make([]string, 0, len(itr.toSch.GetAllCols().GetColumns()))
+
+	switch diff.Type {
+	case tree.RemovedDiff, tree.AddedDiff:
+		// Report all the columns in the latest schema as having changed for adds or deletes
+		for _, col := range itr.toSch.GetAllCols().GetColumns() {
+			changedColumns = append(changedColumns, col.Name)
+		}
+	default:
+		// TODO: This implementation doesn't handle schema changes very well yet... we're currently
+		//       only looking at the toSch, but we should really look at both fromSch and toSch.
+		for i, col := range itr.toSch.GetNonPKCols().GetColumns() {
+			if colIndex := schema.FindNonPKColumnMappingByTagOrName(itr.fromSch, col); colIndex != -1 {
+				fromField := itr.fromSch.GetValueDescriptor().GetField(colIndex, val.Tuple(diff.From))
+				toField := itr.toSch.GetValueDescriptor().GetField(i, val.Tuple(diff.To))
+				if !bytes.Equal(fromField, toField) {
+					changedColumns = append(changedColumns, col.Name)
+				}
+			} else {
+				// Column wasn't found in from schema, so go ahead and include it
+				changedColumns = append(changedColumns, col.Name)
+			}
+		}
+	}
+
+	return changedColumns
 }
 
 type repeatingRowIter struct {

@@ -1216,34 +1216,12 @@ func generateSchemaMappings(mergedSch, leftSch, rightSch, baseSch schema.Schema)
 	baseMapping = make(val.OrdinalMapping, n)
 
 	for i, col := range mergedSch.GetNonPKCols().GetColumns() {
-		leftMapping[i] = findNonPKColumnMappingByTagOrName(leftSch, col)
-		rightMapping[i] = findNonPKColumnMappingByTagOrName(rightSch, col)
-		baseMapping[i] = findNonPKColumnMappingByTagOrName(baseSch, col)
+		leftMapping[i] = schema.FindNonPKColumnMappingByTagOrName(leftSch, col)
+		rightMapping[i] = schema.FindNonPKColumnMappingByTagOrName(rightSch, col)
+		baseMapping[i] = schema.FindNonPKColumnMappingByTagOrName(baseSch, col)
 	}
 
 	return leftMapping, rightMapping, baseMapping
-}
-
-// findNonPKColumnMappingByName returns the index of the column with the given name in the given schema, or -1 if it
-// doesn't exist.
-func findNonPKColumnMappingByName(sch schema.Schema, name string) int {
-	leftNonPKCols := sch.GetNonPKCols()
-	if leftNonPKCols.Contains(name) {
-		return leftNonPKCols.IndexOf(name)
-	} else {
-		return -1
-	}
-}
-
-// findNonPKColumnMappingByTagOrName returns the index of the column with the given tag in the given schema. If a
-// matching tag is not found, then this function falls back to looking for a matching column by name. If no
-// matching column is found, then this function returns -1.
-func findNonPKColumnMappingByTagOrName(sch schema.Schema, col schema.Column) int {
-	if idx, ok := sch.GetNonPKCols().TagToIdx[col.Tag]; ok {
-		return idx
-	} else {
-		return findNonPKColumnMappingByName(sch, col.Name)
-	}
 }
 
 // migrateDataToMergedSchema migrates the data from the left side of the merge of a table to the merged schema. This

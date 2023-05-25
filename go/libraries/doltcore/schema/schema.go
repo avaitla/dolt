@@ -264,6 +264,28 @@ func ArePrimaryKeySetsDiffable(format *types.NomsBinFormat, fromSch, toSch Schem
 	return true
 }
 
+// FindNonPKColumnMappingByName returns the index of the column with the given name in the given schema, or -1 if it
+// doesn't exist.
+func FindNonPKColumnMappingByName(sch Schema, name string) int {
+	leftNonPKCols := sch.GetNonPKCols()
+	if leftNonPKCols.Contains(name) {
+		return leftNonPKCols.IndexOf(name)
+	} else {
+		return -1
+	}
+}
+
+// FindNonPKColumnMappingByTagOrName returns the index of the column with the given tag in the given schema. If a
+// matching tag is not found, then this function falls back to looking for a matching column by name. If no
+// matching column is found, then this function returns -1.
+func FindNonPKColumnMappingByTagOrName(sch Schema, col Column) int {
+	if idx, ok := sch.GetNonPKCols().TagToIdx[col.Tag]; ok {
+		return idx
+	} else {
+		return FindNonPKColumnMappingByName(sch, col.Name)
+	}
+}
+
 // MapSchemaBasedOnTagAndName can be used to map column values from one schema
 // to another schema. A primary key column in |inSch| is mapped to |outSch| if
 // they share the same tag. A non-primary key column in |inSch| is mapped to
