@@ -180,7 +180,8 @@ func getBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, remote bool) ([]
 }
 
 func getActiveBranchName(sqlCtx *sql.Context, queryEngine cli.Queryist) (string, error) {
-	schema, rowIter, err := queryEngine.Query(sqlCtx, "SELECT active_branch()")
+	command := "SELECT active_branch()"
+	schema, rowIter, err := queryEngine.Query(sqlCtx, command)
 	if err != nil {
 		return "", err
 	}
@@ -189,15 +190,15 @@ func getActiveBranchName(sqlCtx *sql.Context, queryEngine cli.Queryist) (string,
 		return "", err
 	}
 	if len(rows) != 1 {
-		return "", fmt.Errorf("unexpectedly received multiple rows in 'SELECT active_branch': %s", rows)
+		return "", fmt.Errorf("unexpectedly received multiple rows in '%s': %s", command, rows)
 	}
 	row := rows[0]
 	if len(row) != 1 {
-		return "", fmt.Errorf("unexpectedly received multiple columns in 'SELECT active_branch': %s", row)
+		return "", fmt.Errorf("unexpectedly received multiple columns in '%s': %s", command, row)
 	}
 	branchName, ok := row[0].(string)
 	if !ok {
-		return "", fmt.Errorf("unexpectedly received non-string column in 'SELECT active_branch': %s", row[0])
+		return "", fmt.Errorf("unexpectedly received non-string column in '%s': %s", command, row[0])
 	}
 	return branchName, nil
 }
