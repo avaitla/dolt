@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dolthub/go-mysql-server/sql"
 	"sort"
 	"strings"
 
@@ -103,6 +104,15 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 	help, usage := cli.HelpAndUsagePrinters(cli.CommandDocsForCommandString(commandStr, branchDocs, ap))
 	apr := cli.ParseArgsOrDie(ap, args, help)
 
+	queryEngine, sqlCtx, closeFunc, err := cliCtx.QueryEngine(ctx)
+	if err != nil {
+		return HandleVErrAndExitCode(errhand.BuildDError("error: failed create query engine").AddCause(err).Build(), nil)
+	}
+
+	if closeFunc != nil {
+		defer closeFunc()
+	}
+
 	switch {
 	case apr.Contains(cli.MoveFlag):
 		return moveBranch(ctx, dEnv, apr, usage)
@@ -113,7 +123,7 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 	case apr.Contains(cli.DeleteForceFlag):
 		return deleteBranches(ctx, dEnv, apr, usage, true)
 	case apr.Contains(cli.ListFlag):
-		return printBranches(ctx, dEnv, apr, usage)
+		return printBranches(ctx, sqlCtx, queryEngine, apr, usage)
 	case apr.Contains(showCurrentFlag):
 		return printCurrentBranch(dEnv)
 	case apr.Contains(datasetsFlag):
@@ -121,46 +131,100 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 	case apr.NArg() > 0:
 		return createBranch(ctx, dEnv, apr, usage)
 	default:
-		return printBranches(ctx, dEnv, apr, usage)
+		return printBranches(ctx, sqlCtx, queryEngine, apr, usage)
 	}
 }
 
-func printBranches(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults, _ cli.UsagePrinter) int {
+func getBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, remote, all bool) ([]string, error) {
+	var command string
+	if all {
+		command = "SELECT name, hash from dolt_remote_branches UNION SELECT name, hash from dolt_branches"
+	} else if remote {
+		command = "SELECT name, hash from dolt_remote_branches"
+	} else {
+		command = "SELECT name, hash from dolt_branches"
+	}
+
+	schema, rowIter, err := queryEngine.Query(sqlCtx, command)
+	if err != nil {
+		return nil, err
+	}
+	branchRows, err := sql.RowIterToRows(sqlCtx, schema, rowIter)
+	if err != nil {
+		return nil, err
+	}
+
+	var branches []string
+	for _, branchRow := range branchRows {
+		if len(branchRow) != 2 {
+			return nil, fmt.Errorf("unexpectedly received multiple columns in '%s': %s", command, branchRow)
+		}
+		branch, ok := branchRow[0].(string)
+		if !ok {
+			return nil, fmt.Errorf("unexpectedly received non-string column in '%s': %s", command, branchRow[0])
+		}
+		branches = append(branches, branch)
+	}
+	return branches, nil
+}
+
+func getActiveBranchName(sqlCtx *sql.Context, queryEngine cli.Queryist) (string, error) {
+	schema, rowIter, err := queryEngine.Query(sqlCtx, "SELECT active_branch()")
+	if err != nil {
+		return "", err
+	}
+	rows, err := sql.RowIterToRows(sqlCtx, schema, rowIter)
+	if err != nil {
+		return "", err
+	}
+	if len(rows) != 1 {
+		return "", fmt.Errorf("unexpectedly received multiple rows in 'SELECT active_branch': %s", rows)
+	}
+	row := rows[0]
+	if len(row) != 1 {
+		return "", fmt.Errorf("unexpectedly received multiple columns in 'SELECT active_branch': %s", row)
+	}
+	branchName, ok := row[0].(string)
+	if !ok {
+		return "", fmt.Errorf("unexpectedly received non-string column in 'SELECT active_branch': %s", row[0])
+	}
+	return branchName, nil
+}
+
+func printBranches(ctx context.Context, sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, _ cli.UsagePrinter) int {
 	branchSet := set.NewStrSet(apr.Args)
 
 	verbose := apr.Contains(cli.VerboseFlag)
 	printRemote := apr.Contains(cli.RemoteParam)
 	printAll := apr.Contains(cli.AllFlag)
 
-	branches, err := dEnv.DoltDB.GetHeadRefs(ctx)
-
-	if err != nil {
-		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read refs from db").AddCause(err).Build(), nil)
+	var branches []string
+	if printAll || printRemote {
+		remoteBranches, err := getBranches(sqlCtx, queryEngine, printRemote, printAll)
+		if err != nil {
+			return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read remote branches from db").AddCause(err).Build(), nil)
+		}
+		branches = append(branches, remoteBranches...)
 	}
 
-	currentBranch, err := dEnv.RepoStateReader().CWBHeadRef()
+	if printAll || !printRemote {
+		localBranches, err := getBranches(sqlCtx, queryEngine, false)
+		if err != nil {
+			return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read local branches from db").AddCause(err).Build(), nil)
+		}
+		branches = append(branches, localBranches...)
+	}
+
+	currentBranch, err := getActiveBranchName(sqlCtx, queryEngine)
 	if err != nil {
 		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read refs from db").AddCause(err).Build(), nil)
 	}
 	sort.Slice(branches, func(i, j int) bool {
-		return branches[i].String() < branches[j].String()
+		return branches[i] < branches[j]
 	})
 
 	for _, branch := range branches {
-		if branchSet.Size() > 0 && !branchSet.Contains(branch.GetPath()) {
-			continue
-		}
-
-		cs, _ := doltdb.NewCommitSpec(branch.String())
-
-		shouldPrint := false
-		switch branch.GetType() {
-		case ref.BranchRefType:
-			shouldPrint = printAll || !printRemote
-		case ref.RemoteRefType:
-			shouldPrint = printAll || printRemote
-		}
-		if !shouldPrint {
+		if branchSet.Size() > 0 && !branchSet.Contains(branch) {
 			continue
 		}
 
