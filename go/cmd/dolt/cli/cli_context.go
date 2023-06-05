@@ -18,14 +18,15 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dolthub/dolt/go/libraries/doltcore/env"
 	"github.com/dolthub/go-mysql-server/sql"
 
 	"github.com/dolthub/dolt/go/cmd/dolt/errhand"
 	"github.com/dolthub/dolt/go/libraries/utils/argparser"
 )
 
-// LateBindQueryist is a function that will be called the first time Querist is needed for use. Input is a context which
-// is appropriate for the call to comence. Output is a Queryist, a sql.Context, a closer function, and an error.
+// LateBindQueryist is a function that will be called the first time Queryist is needed for use. Input is a context which
+// is appropriate for the call to commence. Output is a Queryist, a sql.Context, a closer function, and an error.
 // The closer function is called when the Queryist is no longer needed, typically a defer right after getting it.
 type LateBindQueryist func(ctx context.Context) (Queryist, *sql.Context, func(), error)
 
@@ -52,6 +53,7 @@ type LateBindCliContext struct {
 	globalArgs *argparser.ArgParseResults
 	queryist   Queryist
 	sqlCtx     *sql.Context
+	Config     *env.DoltCliConfig
 
 	bind LateBindQueryist
 }
@@ -78,6 +80,11 @@ func (lbc LateBindCliContext) QueryEngine(ctx context.Context) (Queryist, *sql.C
 	lbc.sqlCtx = sqlCtx
 
 	return qryist, sqlCtx, closer, nil
+}
+
+// getConfig returns the dolt config stored in CliContext
+func (lbc LateBindCliContext) getConfig() *env.DoltCliConfig {
+	return lbc.Config
 }
 
 var _ CliContext = LateBindCliContext{}
