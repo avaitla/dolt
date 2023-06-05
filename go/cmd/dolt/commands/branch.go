@@ -18,7 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/sqlfmt"
 	"github.com/dolthub/go-mysql-server/sql"
+	"io"
 	"sort"
 	"strings"
 
@@ -135,11 +137,15 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 	}
 }
 
-func getBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, remote, all bool) ([]string, error) {
+type branchMeta struct {
+	name   string
+	hash   string
+	remote bool
+}
+
+func getBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, remote bool) ([]branchMeta, error) {
 	var command string
-	if all {
-		command = "SELECT name, hash from dolt_remote_branches UNION SELECT name, hash from dolt_branches"
-	} else if remote {
+	if remote {
 		command = "SELECT name, hash from dolt_remote_branches"
 	} else {
 		command = "SELECT name, hash from dolt_branches"
@@ -149,23 +155,28 @@ func getBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, remote, all bool
 	if err != nil {
 		return nil, err
 	}
-	branchRows, err := sql.RowIterToRows(sqlCtx, schema, rowIter)
-	if err != nil {
-		return nil, err
-	}
 
-	var branches []string
-	for _, branchRow := range branchRows {
-		if len(branchRow) != 2 {
-			return nil, fmt.Errorf("unexpectedly received multiple columns in '%s': %s", command, branchRow)
+	var branches []branchMeta
+
+	for {
+		row, err := rowIter.Next(sqlCtx)
+		if err == io.EOF {
+			return branches, nil
 		}
-		branch, ok := branchRow[0].(string)
-		if !ok {
-			return nil, fmt.Errorf("unexpectedly received non-string column in '%s': %s", command, branchRow[0])
+		if err != nil {
+			return nil, err
 		}
-		branches = append(branches, branch)
+		if len(row) != 2 {
+			return nil, fmt.Errorf("unexpectedly received multiple columns in '%s': %s", command, row)
+		}
+
+		rowStrings, err := sqlfmt.SqlRowAsStrings(row, schema)
+		if err != nil {
+			return nil, err
+		}
+
+		branches = append(branches, branchMeta{name: rowStrings[0], hash: rowStrings[1], remote: remote})
 	}
-	return branches, nil
 }
 
 func getActiveBranchName(sqlCtx *sql.Context, queryEngine cli.Queryist) (string, error) {
@@ -198,9 +209,9 @@ func printBranches(ctx context.Context, sqlCtx *sql.Context, queryEngine cli.Que
 	printRemote := apr.Contains(cli.RemoteParam)
 	printAll := apr.Contains(cli.AllFlag)
 
-	var branches []string
+	var branches []branchMeta
 	if printAll || printRemote {
-		remoteBranches, err := getBranches(sqlCtx, queryEngine, printRemote, printAll)
+		remoteBranches, err := getBranches(sqlCtx, queryEngine, true)
 		if err != nil {
 			return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read remote branches from db").AddCause(err).Build(), nil)
 		}
@@ -219,37 +230,23 @@ func printBranches(ctx context.Context, sqlCtx *sql.Context, queryEngine cli.Que
 	if err != nil {
 		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read refs from db").AddCause(err).Build(), nil)
 	}
-	sort.Slice(branches, func(i, j int) bool {
-		return branches[i] < branches[j]
-	})
 
 	for _, branch := range branches {
-		if branchSet.Size() > 0 && !branchSet.Contains(branch) {
+		if branchSet.Size() > 0 && !branchSet.Contains(branch.name) {
 			continue
 		}
 
 		commitStr := ""
-		branchName := "  " + branch.GetPath()
+		branchName := "  " + branch.name
 		branchLen := len(branchName)
-		if ref.Equals(branch, currentBranch) {
-			branchName = "* " + color.GreenString(branch.GetPath())
-		} else if branch.GetType() == ref.RemoteRefType {
-			branchName = "  " + color.RedString("remotes/"+branch.GetPath())
-			branchLen += len("remotes/")
+		if branch.name == currentBranch {
+			branchName = "* " + color.GreenString(branch.name)
+		} else if branch.remote {
+			branchName = "  " + color.RedString(branch.name)
 		}
 
 		if verbose {
-			cm, err := dEnv.DoltDB.Resolve(ctx, cs, currentBranch)
-
-			if err == nil {
-				h, err := cm.HashOf()
-
-				if err != nil {
-					return HandleVErrAndExitCode(errhand.BuildDError("error: failed to hash commit").AddCause(err).Build(), nil)
-				}
-
-				commitStr = h.String()
-			}
+			commitStr = branch.hash
 		}
 
 		fmtStr := fmt.Sprintf("%%s%%%ds\t%%s", 48-branchLen)
