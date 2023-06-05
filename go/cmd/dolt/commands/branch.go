@@ -127,7 +127,7 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 	case apr.Contains(cli.ListFlag):
 		return printBranches(sqlCtx, queryEngine, apr, usage)
 	case apr.Contains(showCurrentFlag):
-		return printCurrentBranch(dEnv)
+		return printCurrentBranch(sqlCtx, queryEngine)
 	case apr.Contains(datasetsFlag):
 		return printAllDatasets(ctx, dEnv)
 	case apr.NArg() > 0:
@@ -229,7 +229,7 @@ func printBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser
 
 	currentBranch, err := getActiveBranchName(sqlCtx, queryEngine)
 	if err != nil {
-		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read refs from db").AddCause(err).Build(), nil)
+		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read current branch from db").AddCause(err).Build(), nil)
 	}
 
 	for _, branch := range branches {
@@ -259,12 +259,12 @@ func printBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser
 	return 0
 }
 
-func printCurrentBranch(dEnv *env.DoltEnv) int {
-	headRef, err := dEnv.RepoStateReader().CWBHeadRef()
+func printCurrentBranch(sqlCtx *sql.Context, queryEngine cli.Queryist) int {
+	currentBranchName, err := getActiveBranchName(sqlCtx, queryEngine)
 	if err != nil {
-		return HandleVErrAndExitCode(errhand.BuildDError(err.Error()).Build(), nil)
+		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read current branch from db").AddCause(err).Build(), nil)
 	}
-	cli.Println(headRef.GetPath())
+	cli.Println(currentBranchName)
 	return 0
 }
 
