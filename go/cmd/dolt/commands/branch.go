@@ -125,7 +125,7 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 	case apr.Contains(cli.DeleteForceFlag):
 		return deleteBranches(ctx, dEnv, apr, usage, true)
 	case apr.Contains(cli.ListFlag):
-		return printBranches(ctx, sqlCtx, queryEngine, apr, usage)
+		return printBranches(sqlCtx, queryEngine, apr, usage)
 	case apr.Contains(showCurrentFlag):
 		return printCurrentBranch(dEnv)
 	case apr.Contains(datasetsFlag):
@@ -133,7 +133,7 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 	case apr.NArg() > 0:
 		return createBranch(ctx, dEnv, apr, usage)
 	default:
-		return printBranches(ctx, sqlCtx, queryEngine, apr, usage)
+		return printBranches(sqlCtx, queryEngine, apr, usage)
 	}
 }
 
@@ -203,7 +203,7 @@ func getActiveBranchName(sqlCtx *sql.Context, queryEngine cli.Queryist) (string,
 	return branchName, nil
 }
 
-func printBranches(ctx context.Context, sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, _ cli.UsagePrinter) int {
+func printBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, _ cli.UsagePrinter) int {
 	branchSet := set.NewStrSet(apr.Args)
 
 	verbose := apr.Contains(cli.VerboseFlag)
