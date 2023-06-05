@@ -34,16 +34,17 @@ type LateBindQueryist func(ctx context.Context) (Queryist, *sql.Context, func(),
 type CliContext interface {
 	// GlobalArgs returns the arguments passed before the subcommand.
 	GlobalArgs() *argparser.ArgParseResults
+	Config() *env.DoltCliConfig
 	QueryEngine(ctx context.Context) (Queryist, *sql.Context, func(), error)
 }
 
 // NewCliContext creates a new CliContext instance. Arguments must not be nil.
-func NewCliContext(args *argparser.ArgParseResults, latebind LateBindQueryist) (CliContext, errhand.VerboseError) {
+func NewCliContext(args *argparser.ArgParseResults, config *env.DoltCliConfig, latebind LateBindQueryist) (CliContext, errhand.VerboseError) {
 	if args == nil || latebind == nil {
 		return nil, errhand.VerboseErrorFromError(fmt.Errorf("Invariant violated. args and latebind must be non nil."))
 	}
 
-	return LateBindCliContext{globalArgs: args, bind: latebind}, nil
+	return LateBindCliContext{globalArgs: args, config: config, bind: latebind}, nil
 }
 
 // LateBindCliContext is a struct that implements CliContext. Its primary purpose is to wrap the global arguments and
@@ -53,7 +54,7 @@ type LateBindCliContext struct {
 	globalArgs *argparser.ArgParseResults
 	queryist   Queryist
 	sqlCtx     *sql.Context
-	Config     *env.DoltCliConfig
+	config     *env.DoltCliConfig
 
 	bind LateBindQueryist
 }
@@ -83,8 +84,8 @@ func (lbc LateBindCliContext) QueryEngine(ctx context.Context) (Queryist, *sql.C
 }
 
 // getConfig returns the dolt config stored in CliContext
-func (lbc LateBindCliContext) getConfig() *env.DoltCliConfig {
-	return lbc.Config
+func (lbc LateBindCliContext) Config() *env.DoltCliConfig {
+	return lbc.config
 }
 
 var _ CliContext = LateBindCliContext{}
