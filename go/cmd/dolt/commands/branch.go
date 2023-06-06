@@ -115,8 +115,8 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 		defer closeFunc()
 	}
 
-	if len(apr.ContainsMany(cli.MoveFlag, cli.CopyFlag, cli.DeleteFlag, cli.DeleteForceFlag, cli.ListFlag)) > 1 {
-		cli.PrintErrln("Must specify exactly one of --move/-m, --copy/-c, --delete/-d, -D, or --list.")
+	if len(apr.ContainsMany(cli.MoveFlag, cli.CopyFlag, cli.DeleteFlag, cli.DeleteForceFlag, cli.ListFlag, showCurrentFlag)) > 1 {
+		cli.PrintErrln("Must specify exactly one of --move/-m, --copy/-c, --delete/-d, -D, --show-current, or --list.")
 		return 1
 	}
 
@@ -126,12 +126,11 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 		}
 	}
 
-	// createBranch and deleteBranches both call DOLT_BRANCH, but differ in their validation logic.
 	switch {
 	case apr.Contains(cli.MoveFlag):
-		return createBranch(sqlCtx, queryEngine, apr, args, usage)
+		return moveBranch(sqlCtx, queryEngine, apr, args, usage)
 	case apr.Contains(cli.CopyFlag):
-		return createBranch(sqlCtx, queryEngine, apr, args, usage)
+		return copyBranch(sqlCtx, queryEngine, apr, args, usage)
 	case apr.Contains(cli.DeleteFlag):
 		return deleteBranches(sqlCtx, queryEngine, apr, args, usage)
 	case apr.Contains(cli.DeleteForceFlag):
@@ -347,7 +346,7 @@ func generateSql(args []string) string {
 }
 
 func createBranch(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, args []string, usage cli.UsagePrinter) int {
-	if apr.NArg() != 2 {
+	if apr.NArg() != 1 && apr.NArg() != 2 {
 		usage()
 		return 1
 	}
@@ -367,14 +366,55 @@ func createBranch(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.
 		return 1
 	}
 
-	query := generateSql(args)
-	schema, rowIter, err := queryEngine.Query(sqlCtx, query)
-	_, err = sql.RowIterToRows(sqlCtx, schema, rowIter)
-	if err != nil {
-		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to run query %s", query).AddCause(err).Build(), nil)
+	return runQuery(sqlCtx, queryEngine, args)
+}
+
+func moveBranch(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, args []string, usage cli.UsagePrinter) int {
+	if apr.NArg() != 2 {
+		usage()
+		return 1
 	}
 
-	return 0
+	if apr.Contains(cli.AllFlag) {
+		cli.PrintErrln("--all/-a can only be supplied when listing branches, not when moving branches")
+		return 1
+	}
+
+	if apr.Contains(cli.VerboseFlag) {
+		cli.PrintErrln("--verbose/-v can only be supplied when listing branches, not when moving branches")
+		return 1
+	}
+
+	if apr.Contains(cli.RemoteParam) {
+		cli.PrintErrln("--remote/-r can only be supplied when listing or deleting branches, not when moving branches")
+		return 1
+	}
+
+	return runQuery(sqlCtx, queryEngine, args)
+}
+
+func copyBranch(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, args []string, usage cli.UsagePrinter) int {
+	if apr.NArg() != 2 {
+		usage()
+		return 1
+	}
+
+	if apr.Contains(cli.AllFlag) {
+		cli.PrintErrln("--all/-a can only be supplied when listing branches, not when copying branches")
+		return 1
+	}
+
+	if apr.Contains(cli.VerboseFlag) {
+		cli.PrintErrln("--verbose/-v can only be supplied when listing branches, not when copying branches")
+		return 1
+	}
+
+	if apr.Contains(cli.RemoteParam) {
+		cli.PrintErrln("--remote/-r can only be supplied when listing or deleting branches, not when copying branches")
+		return 1
+	}
+
+	return runQuery(sqlCtx, queryEngine, args)
 }
 
 func deleteBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, args []string, usage cli.UsagePrinter) int {
@@ -393,6 +433,10 @@ func deleteBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparse
 		return 1
 	}
 
+	return runQuery(sqlCtx, queryEngine, args)
+}
+
+func runQuery(sqlCtx *sql.Context, queryEngine cli.Queryist, args []string) int {
 	query := generateSql(args)
 	schema, rowIter, err := queryEngine.Query(sqlCtx, query)
 	_, err = sql.RowIterToRows(sqlCtx, schema, rowIter)
