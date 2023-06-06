@@ -152,7 +152,6 @@ teardown() {
 }
 
 @test "branch: -a can only be supplied when listing branches" {
-    skip "This will be easier to implement after migrating to new CLI framework"
     run dolt branch -a
     [ "$status" -eq 0 ]
 
@@ -178,7 +177,6 @@ teardown() {
 }
 
 @test "branch: -v can only be supplied when listing branches" {
-    skip "This will be easier to implement after migrating to new CLI framework"
     run dolt branch -v
     [ "$status" -eq 0 ]
 
@@ -204,7 +202,6 @@ teardown() {
 }
 
 @test "branch: -r can only be supplied when listing or deleting branches" {
-    skip "This will be easier to implement after migrating to new CLI framework"
     run dolt branch -r
     [ "$status" -eq 0 ]
 
