@@ -120,6 +120,12 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 		return 1
 	}
 
+	for _, arg := range apr.Args {
+		if !doltdb.IsValidUserBranchName(arg) {
+			cli.PrintErrf("%s is an invalid branch name", arg)
+		}
+	}
+
 	switch {
 	case apr.Contains(cli.MoveFlag):
 		return moveBranch(ctx, dEnv, apr, usage)
