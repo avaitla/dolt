@@ -439,9 +439,12 @@ func deleteBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparse
 func runQuery(sqlCtx *sql.Context, queryEngine cli.Queryist, args []string) int {
 	query := generateSql(args)
 	schema, rowIter, err := queryEngine.Query(sqlCtx, query)
-	_, err = sql.RowIterToRows(sqlCtx, schema, rowIter)
 	if err != nil {
 		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to run query %s", query).AddCause(err).Build(), nil)
+	}
+	_, err = sql.RowIterToRows(sqlCtx, schema, rowIter)
+	if err != nil {
+		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to get result rows", query).AddCause(err).Build(), nil)
 	}
 
 	return 0
