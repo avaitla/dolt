@@ -122,7 +122,6 @@ var doltSubCommands = []cli.Command{
 
 var commandsWithoutCliCtx = []cli.Command{
 	commands.InitCmd{},
-	commands.DiffCmd{},
 	commands.ResetCmd{},
 	commands.CleanCmd{},
 	commands.CommitCmd{},

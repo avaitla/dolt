@@ -116,7 +116,7 @@ func (cmd ShowCmd) Exec(ctx context.Context, commandStr string, args []string, d
 		return 1
 	}
 
-	opts.diffDisplaySettings = parseDiffDisplaySettings(ctx, dEnv, apr)
+	opts.diffDisplaySettings = parseDiffDisplaySettings(apr)
 
 	err = showObjects(ctx, dEnv, opts)
 

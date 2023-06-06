@@ -17,6 +17,7 @@ package diff
 import (
 	"context"
 	"fmt"
+	"github.com/dolthub/dolt/go/cmd/dolt/cli"
 	"sort"
 
 	"github.com/dolthub/go-mysql-server/sql"
@@ -28,7 +29,6 @@ import (
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/sqlfmt"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/sqlutil"
 	"github.com/dolthub/dolt/go/libraries/utils/set"
-	"github.com/dolthub/dolt/go/store/prolly/tree"
 	"github.com/dolthub/dolt/go/store/types"
 )
 
@@ -45,14 +45,14 @@ const (
 // FromFKs and ToFKs contain Foreign Keys that constrain columns in this table,
 // they do not contain Foreign Keys that reference this table.
 type TableDelta struct {
-	FromName         string
-	ToName           string
-	FromTable        *doltdb.Table
-	ToTable          *doltdb.Table
-	FromNodeStore    tree.NodeStore
-	ToNodeStore      tree.NodeStore
-	FromVRW          types.ValueReadWriter
-	ToVRW            types.ValueReadWriter
+	FromName string
+	ToName   string
+	//FromTable        *doltdb.Table
+	//ToTable          *doltdb.Table
+	//FromNodeStore    tree.NodeStore
+	//ToNodeStore      tree.NodeStore
+	//FromVRW          types.ValueReadWriter
+	//ToVRW            types.ValueReadWriter
 	FromSch          schema.Schema
 	ToSch            schema.Schema
 	FromFks          []doltdb.ForeignKey
@@ -71,13 +71,13 @@ type TableDeltaSummary struct {
 }
 
 // GetStagedUnstagedTableDeltas represents staged and unstaged changes as TableDelta slices.
-func GetStagedUnstagedTableDeltas(ctx context.Context, roots doltdb.Roots) (staged, unstaged []TableDelta, err error) {
-	staged, err = GetTableDeltas(ctx, roots.Head, roots.Staged)
+func GetStagedUnstagedTableDeltas(queryist cli.Queryist, sqlCtx *sql.Context, ctx context.Context, roots doltdb.Roots) (staged, unstaged []TableDelta, err error) {
+	staged, err = GetTableDeltas(queryist, sqlCtx, ctx, "HEAD", "STAGED")
 	if err != nil {
 		return nil, nil, err
 	}
 
-	unstaged, err = GetTableDeltas(ctx, roots.Staged, roots.Working)
+	unstaged, err = GetTableDeltas(queryist, sqlCtx, ctx, "STAGED", "WORKING")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -85,73 +85,144 @@ func GetStagedUnstagedTableDeltas(ctx context.Context, roots doltdb.Roots) (stag
 	return staged, unstaged, nil
 }
 
+func getTableSchemaAtRef(queryist cli.Queryist, sqlCtx *sql.Context, tableName string, ref string) (schema.Schema, error) {
+	query := fmt.Sprintf("select * from `%s` limit 0 as of %s", tableName, ref)
+	tableSchema, _, err := queryist.Query(sqlCtx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	sch, err := sqlutil.ToDoltResultSchema(tableSchema)
+	if err != nil {
+		return nil, err
+	}
+	return sch, nil
+}
+
+func getTablesAtRef(queryist cli.Queryist, sqlCtx *sql.Context, ref string) (map[string]bool, error) {
+	q := fmt.Sprintf("SHOW TABLES AS OF '%s'", ref)
+	rows, err := getRowsForSql(queryist, sqlCtx, q)
+	if err != nil {
+		return nil, err
+	}
+
+	tableNames := make(map[string]bool)
+	for _, row := range rows {
+		tableName := row[0].(string)
+		tableNames[tableName] = true
+	}
+
+	return tableNames, nil
+}
+
+func getRowsForSql(queryist cli.Queryist, sqlCtx *sql.Context, q string) ([]sql.Row, error) {
+	sch, ri, err := queryist.Query(sqlCtx, q)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := sql.RowIterToRows(sqlCtx, sch, ri)
+	if err != nil {
+		return nil, err
+	}
+
+	return rows, nil
+}
+
 // GetTableDeltas returns a slice of TableDelta objects for each table that changed between fromRoot and toRoot.
 // It matches tables across roots by finding Schemas with Column tags in common.
-func GetTableDeltas(ctx context.Context, fromRoot, toRoot *doltdb.RootValue) (deltas []TableDelta, err error) {
-	fromVRW := fromRoot.VRW()
-	fromNS := fromRoot.NodeStore()
-	toVRW := toRoot.VRW()
-	toNS := toRoot.NodeStore()
+func GetTableDeltas(queryist cli.Queryist, sqlCtx *sql.Context, ctx context.Context, fromRef, toRef string) (deltas []TableDelta, err error) {
+	//fromVRW := fromRoot.VRW()
+	//fromNS := fromRoot.NodeStore()
+	//toVRW := toRoot.VRW()
+	//toNS := toRoot.NodeStore()
 
+	fromTables, err := getTablesAtRef(queryist, sqlCtx, fromRef)
+	if err != nil {
+		return nil, err
+	}
 	fromDeltas := make([]TableDelta, 0)
-	err = fromRoot.IterTables(ctx, func(name string, tbl *doltdb.Table, sch schema.Schema) (stop bool, err error) {
-		c, err := fromRoot.GetForeignKeyCollection(ctx)
+	for fromTable := range fromTables {
+		sch, err := getTableSchemaAtRef(queryist, sqlCtx, fromTable, fromRef)
 		if err != nil {
-			return true, err
+			return nil, err
 		}
-		fks, _ := c.KeysForTable(name)
-		parentSchs, err := getFkParentSchs(ctx, fromRoot, fks...)
-		if err != nil {
-			return false, err
-		}
-
 		fromDeltas = append(fromDeltas, TableDelta{
-			FromName:         name,
-			FromTable:        tbl,
-			FromSch:          sch,
-			FromFks:          fks,
-			FromFksParentSch: parentSchs,
-			FromVRW:          fromVRW,
-			FromNodeStore:    fromNS,
-			ToVRW:            toVRW,
-			ToNodeStore:      toNS,
+			FromName: fromTable,
+			FromSch:  sch,
 		})
-		return
-	})
+	}
+	//err = fromRoot.IterTables(ctx, func(name string, tbl *doltdb.Table, sch schema.Schema) (stop bool, err error) {
+	//	c, err := fromRoot.GetForeignKeyCollection(ctx)
+	//	if err != nil {
+	//		return true, err
+	//	}
+	//	fks, _ := c.KeysForTable(name)
+	//	parentSchs, err := getFkParentSchs(ctx, fromRoot, fks...)
+	//	if err != nil {
+	//		return false, err
+	//	}
+	//
+	//	fromDeltas = append(fromDeltas, TableDelta{
+	//		FromName: name,
+	//		//FromTable:        tbl,
+	//		FromSch:          sch,
+	//		FromFks:          fks,
+	//		FromFksParentSch: parentSchs,
+	//		//FromVRW:          fromVRW,
+	//		//FromNodeStore:    fromNS,
+	//		//ToVRW:            toVRW,
+	//		//ToNodeStore:      toNS,
+	//	})
+	//	return
+	//})
+	//if err != nil {
+	//	return nil, err
+	//}
+
+	toTables, err := getTablesAtRef(queryist, sqlCtx, toRef)
 	if err != nil {
 		return nil, err
 	}
-
 	toDeltas := make([]TableDelta, 0)
-
-	err = toRoot.IterTables(ctx, func(name string, tbl *doltdb.Table, sch schema.Schema) (stop bool, err error) {
-		c, err := toRoot.GetForeignKeyCollection(ctx)
+	for toTable := range toTables {
+		sch, err := getTableSchemaAtRef(queryist, sqlCtx, toTable, toRef)
 		if err != nil {
-			return true, err
+			return nil, err
 		}
-
-		fks, _ := c.KeysForTable(name)
-		parentSchs, err := getFkParentSchs(ctx, toRoot, fks...)
-		if err != nil {
-			return false, err
-		}
-
 		toDeltas = append(toDeltas, TableDelta{
-			ToName:         name,
-			ToTable:        tbl,
-			ToSch:          sch,
-			ToFks:          fks,
-			ToFksParentSch: parentSchs,
-			FromVRW:        fromVRW,
-			FromNodeStore:  fromNS,
-			ToVRW:          toVRW,
-			ToNodeStore:    toNS,
+			ToName: toTable,
+			ToSch:  sch,
 		})
-		return
-	})
-	if err != nil {
-		return nil, err
 	}
+
+	//err = toRoot.IterTables(ctx, func(name string, tbl *doltdb.Table, sch schema.Schema) (stop bool, err error) {
+	//	c, err := toRoot.GetForeignKeyCollection(ctx)
+	//	if err != nil {
+	//		return true, err
+	//	}
+	//
+	//	fks, _ := c.KeysForTable(name)
+	//	parentSchs, err := getFkParentSchs(ctx, toRoot, fks...)
+	//	if err != nil {
+	//		return false, err
+	//	}
+	//
+	//	toDeltas = append(toDeltas, TableDelta{
+	//		ToName: name,
+	//		//ToTable:        tbl,
+	//		ToSch:          sch,
+	//		ToFks:          fks,
+	//		ToFksParentSch: parentSchs,
+	//		//FromVRW:        fromVRW,
+	//		//FromNodeStore:  fromNS,
+	//		//ToVRW:          toVRW,
+	//		//ToNodeStore:    toNS,
+	//	})
+	//	return
+	//})
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	deltas = matchTableDeltas(fromDeltas, toDeltas)
 	deltas, err = filterUnmodifiedTableDeltas(deltas)
