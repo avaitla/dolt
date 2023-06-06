@@ -371,25 +371,6 @@ func moveBranch(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.Ar
 	}
 
 	return 0
-
-	/*
-		var verr errhand.VerboseError
-		if err != nil {
-			if err == doltdb.ErrBranchNotFound {
-				verr = errhand.BuildDError("fatal: branch '%s' not found", src).Build()
-			} else if err == actions.ErrAlreadyExists {
-				verr = errhand.BuildDError("fatal: A branch named '%s' already exists.", dest).Build()
-			} else if err == doltdb.ErrInvBranchName {
-				verr = errhand.BuildDError("fatal: '%s' is not a valid branch name.", dest).Build()
-			} else if err == actions.ErrCOBranchDelete {
-				verr = errhand.BuildDError("error: Cannot delete checked out branch '%s'", src).Build()
-			} else {
-				bdr := errhand.BuildDError("fatal: Unexpected error moving branch from '%s' to '%s'", src, dest)
-				verr = bdr.AddCause(err).Build()
-			}
-		}
-
-		return HandleVErrAndExitCode(verr, usage)*/
 }
 
 func copyBranch(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults, usage cli.UsagePrinter) int {
