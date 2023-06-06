@@ -129,9 +129,9 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 
 	switch {
 	case apr.Contains(cli.MoveFlag):
-		return moveBranch(sqlCtx, queryEngine, apr, args, usage)
+		return createBranch(sqlCtx, queryEngine, apr, args, usage)
 	case apr.Contains(cli.CopyFlag):
-		return copyBranch(ctx, dEnv, apr, usage)
+		return createBranch(sqlCtx, queryEngine, apr, args, usage)
 	case apr.Contains(cli.DeleteFlag):
 		return deleteBranches(ctx, dEnv, apr, usage, apr.Contains(cli.ForceFlag))
 	case apr.Contains(cli.DeleteForceFlag):
@@ -143,7 +143,7 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 	case apr.Contains(datasetsFlag):
 		return printAllDatasets(ctx, dEnv)
 	case apr.NArg() > 0:
-		return createBranch(ctx, dEnv, apr, usage)
+		return createBranch(sqlCtx, queryEngine, apr, args, usage)
 	default:
 		return printBranches(sqlCtx, queryEngine, apr, usage)
 	}
@@ -342,7 +342,7 @@ func generateSql(args []string) string {
 	return buffer.String()
 }
 
-func moveBranch(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, args []string, usage cli.UsagePrinter) int {
+func createBranch(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, args []string, usage cli.UsagePrinter) int {
 	if apr.NArg() != 2 {
 		usage()
 		return 1
@@ -371,34 +371,6 @@ func moveBranch(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.Ar
 	}
 
 	return 0
-}
-
-func copyBranch(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults, usage cli.UsagePrinter) int {
-	if apr.NArg() != 2 {
-		usage()
-		return 1
-	}
-
-	force := apr.Contains(cli.ForceFlag)
-	src := apr.Arg(0)
-	dest := apr.Arg(1)
-	err := actions.CopyBranch(ctx, dEnv, src, dest, force)
-
-	var verr errhand.VerboseError
-	if err != nil {
-		if err == doltdb.ErrBranchNotFound {
-			verr = errhand.BuildDError("fatal: branch '%s' not found", src).Build()
-		} else if err == actions.ErrAlreadyExists {
-			verr = errhand.BuildDError("fatal: A branch named '%s' already exists.", dest).Build()
-		} else if err == doltdb.ErrInvBranchName {
-			verr = errhand.BuildDError("fatal: '%s' is not a valid branch name.", dest).Build()
-		} else {
-			bdr := errhand.BuildDError("fatal: Unexpected error copying branch from '%s' to '%s'", src, dest)
-			verr = bdr.AddCause(err).Build()
-		}
-	}
-
-	return HandleVErrAndExitCode(verr, usage)
 }
 
 func deleteBranches(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults, usage cli.UsagePrinter, force bool) int {
@@ -432,73 +404,6 @@ func deleteBranches(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgPa
 	}
 
 	return HandleVErrAndExitCode(nil, usage)
-}
-
-func createBranch(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults, usage cli.UsagePrinter) int {
-	if apr.NArg() == 0 || apr.NArg() > 2 {
-		usage()
-		return 1
-	}
-
-	var remote string
-	var remoteBranch string
-	newBranch := apr.Arg(0)
-	startPt := "head"
-	if apr.NArg() == 2 {
-		startPt = apr.Arg(1)
-	}
-
-	trackVal, setTrackUpstream := apr.GetValue(cli.TrackFlag)
-	if setTrackUpstream {
-		if trackVal == "inherit" {
-			return HandleVErrAndExitCode(errhand.BuildDError("--track='inherit' is not supported yet").Build(), usage)
-		} else if trackVal == "direct" && apr.NArg() != 2 {
-			return HandleVErrAndExitCode(errhand.BuildDError("invalid arguments").Build(), usage)
-		}
-
-		remotes, err := dEnv.RepoStateReader().GetRemotes()
-		if err != nil {
-			return HandleVErrAndExitCode(errhand.BuildDError(err.Error()).Build(), usage)
-		}
-
-		if apr.NArg() == 2 {
-			// branchName and startPt are already set
-			remote, remoteBranch = actions.ParseRemoteBranchName(startPt)
-			_, remoteOk := remotes[remote]
-			if !remoteOk {
-				return HandleVErrAndExitCode(errhand.BuildDError("'%s' is not a valid remote ref and a branch '%s' cannot be created from it", startPt, newBranch).Build(), usage)
-			}
-		} else {
-			// if track option is defined with no value,
-			// the track value can either be starting point name OR branch name
-			startPt = trackVal
-			remote, remoteBranch = actions.ParseRemoteBranchName(startPt)
-			_, remoteOk := remotes[remote]
-			if !remoteOk {
-				newBranch = trackVal
-				startPt = apr.Arg(0)
-				remote, remoteBranch = actions.ParseRemoteBranchName(startPt)
-				_, remoteOk = remotes[remote]
-				if !remoteOk {
-					return HandleVErrAndExitCode(errhand.BuildDError("'%s' is not a valid remote ref and a branch '%s' cannot be created from it", startPt, newBranch).Build(), usage)
-				}
-			}
-		}
-	}
-
-	err := actions.CreateBranchWithStartPt(ctx, dEnv.DbData(), newBranch, startPt, apr.Contains(cli.ForceFlag), nil)
-	if err != nil {
-		return HandleVErrAndExitCode(errhand.BuildDError(err.Error()).Build(), usage)
-	}
-
-	if setTrackUpstream {
-		// at this point new branch is created
-		branchRef := ref.NewBranchRef(newBranch)
-		verr := SetRemoteUpstreamForBranchRef(dEnv, remote, remoteBranch, branchRef)
-		return HandleVErrAndExitCode(verr, usage)
-	}
-
-	return 0
 }
 
 func HandleVErrAndExitCode(verr errhand.VerboseError, usage cli.UsagePrinter) int {
