@@ -150,3 +150,56 @@ teardown() {
     [ "$status" -ne 0 ]
     [[ "$output" =~ "Must specify exactly one of --move/-m, --copy/-c, --delete/-d, -D, or --list." ]] || false
 }
+
+@test "branch: -a can only be supplied when listing branches" {
+    skip "This will be easier to implement after migrating to new CLI framework"
+    run dolt branch -a
+    [ "$status" -eq 0 ]
+
+    run dolt branch -a --list main
+    [ "$status" -eq 0 ]
+
+    dolt branch test
+    run dolt branch -v test
+    [ "$status" -ne 0 ]
+    [[ "$output" =~ "--all/-a can only be supplied when listing branches, not when deleting branches" ]] || false
+
+    run dolt branch -a -c copy
+    [ "$status" -ne 0 ]
+    [[ "$output" =~ "--all/-a can only be supplied when listing branches, not when creating branches" ]] || false
+}
+
+@test "branch: -v can only be supplied when listing branches" {
+    skip "This will be easier to implement after migrating to new CLI framework"
+    run dolt branch -v
+    [ "$status" -eq 0 ]
+
+    run dolt branch -v --list main
+    [ "$status" -eq 0 ]
+
+    dolt branch test
+    run dolt branch -v test
+    [ "$status" -ne 0 ]
+    [[ "$output" =~ "--verbose/-v can only be supplied when listing branches, not when deleting branches" ]] || false
+
+    run dolt branch -v -c copy
+    [ "$status" -ne 0 ]
+    [[ "$output" =~ "--verbose/-v can only be supplied when listing branches, not when creating branches" ]] || false
+}
+
+@test "branch: -r can only be supplied when listing or deleting branches" {
+    skip "This will be easier to implement after migrating to new CLI framework"
+    run dolt branch -r
+    [ "$status" -eq 0 ]
+
+    run dolt branch -r --list main
+    [ "$status" -eq 0 ]
+
+    dolt branch test
+    run dolt branch -r test
+    [ "$status" -eq 0 ]
+
+    run dolt branch -r -c copy
+    [ "$status" -ne 0 ]
+    [[ "$output" =~ "--remote/-r can only be supplied when listing or deleting branches, not when creating branches" ]] || false
+}
