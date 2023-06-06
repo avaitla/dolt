@@ -115,6 +115,11 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 		defer closeFunc()
 	}
 
+	if len(apr.ContainsMany(cli.MoveFlag, cli.CopyFlag, cli.DeleteFlag, cli.DeleteForceFlag, cli.ListFlag)) > 1 {
+		cli.PrintErrln("Must specify exactly one of --move/-m, --copy/-c, --delete/-d, -D, or --list.")
+		return 1
+	}
+
 	switch {
 	case apr.Contains(cli.MoveFlag):
 		return moveBranch(ctx, dEnv, apr, usage)

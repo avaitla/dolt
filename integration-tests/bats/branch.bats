@@ -144,3 +144,9 @@ teardown() {
     [ "$status" -ne 0 ]
     [[ "$output" =~ "Cannot delete checked out branch 'main'" ]] || false
 }
+
+@test "branch: supplying multiple directives results in an error" {
+    run dolt branch -m -c main main2
+    [ "$status" -ne 0 ]
+    [[ "$output" =~ "Must specify exactly one of --move/-m, --copy/-c, --delete/-d, -D, or --list." ]] || false
+}
