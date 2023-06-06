@@ -244,6 +244,10 @@ func printBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser
 		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to read current branch from db").AddCause(err).Build(), nil)
 	}
 
+	sort.Slice(branches, func(i, j int) bool {
+		return branches[i].name < branches[j].name
+	})
+
 	for _, branch := range branches {
 		if branchSet.Size() > 0 && !branchSet.Contains(branch.name) {
 			continue
