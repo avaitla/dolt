@@ -32,7 +32,6 @@ import (
 	eventsapi "github.com/dolthub/dolt/go/gen/proto/dolt/services/eventsapi/v1alpha1"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env"
-	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions"
 	"github.com/dolthub/dolt/go/libraries/doltcore/ref"
 	"github.com/dolthub/dolt/go/libraries/utils/argparser"
 	"github.com/dolthub/dolt/go/libraries/utils/set"
@@ -133,9 +132,9 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 	case apr.Contains(cli.CopyFlag):
 		return createBranch(sqlCtx, queryEngine, apr, args, usage)
 	case apr.Contains(cli.DeleteFlag):
-		return deleteBranches(ctx, dEnv, apr, usage, apr.Contains(cli.ForceFlag))
+		return deleteBranches(sqlCtx, queryEngine, apr, args, usage)
 	case apr.Contains(cli.DeleteForceFlag):
-		return deleteBranches(ctx, dEnv, apr, usage, true)
+		return deleteBranches(sqlCtx, queryEngine, apr, args, usage)
 	case apr.Contains(cli.ListFlag):
 		return printBranches(sqlCtx, queryEngine, apr, usage)
 	case apr.Contains(showCurrentFlag):
@@ -373,37 +372,30 @@ func createBranch(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.
 	return 0
 }
 
-func deleteBranches(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults, usage cli.UsagePrinter, force bool) int {
+func deleteBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparser.ArgParseResults, args []string, usage cli.UsagePrinter) int {
 	if apr.NArg() == 0 {
 		usage()
 		return 1
 	}
 
-	for i := 0; i < apr.NArg(); i++ {
-		brName := apr.Arg(i)
-
-		err := actions.DeleteBranch(ctx, dEnv.DbData(), brName, actions.DeleteOptions{
-			Force:  force,
-			Remote: apr.Contains(cli.RemoteParam),
-		}, dEnv, nil)
-
-		if err != nil {
-			var verr errhand.VerboseError
-			if err == doltdb.ErrBranchNotFound {
-				verr = errhand.BuildDError("fatal: branch '%s' not found", brName).Build()
-			} else if err == actions.ErrUnmergedBranch {
-				verr = errhand.BuildDError(ErrUnmergedBranchDelete.Error(), brName, brName).Build()
-			} else if err == actions.ErrCOBranchDelete {
-				verr = errhand.BuildDError("error: Cannot delete checked out branch '%s'", brName).Build()
-			} else {
-				bdr := errhand.BuildDError("fatal: Unexpected error deleting '%s'", brName)
-				verr = bdr.AddCause(err).Build()
-			}
-			return HandleVErrAndExitCode(verr, usage)
-		}
+	if apr.Contains(cli.AllFlag) {
+		cli.PrintErrln("--all/-a can only be supplied when listing branches, not when deleting branches")
+		return 1
 	}
 
-	return HandleVErrAndExitCode(nil, usage)
+	if apr.Contains(cli.VerboseFlag) {
+		cli.PrintErrln("--verbose/-v can only be supplied when listing branches, not when deleting branches")
+		return 1
+	}
+
+	query := generateSql(args)
+	schema, rowIter, err := queryEngine.Query(sqlCtx, query)
+	_, err = sql.RowIterToRows(sqlCtx, schema, rowIter)
+	if err != nil {
+		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to run query %s", query).AddCause(err).Build(), nil)
+	}
+
+	return 0
 }
 
 func HandleVErrAndExitCode(verr errhand.VerboseError, usage cli.UsagePrinter) int {
