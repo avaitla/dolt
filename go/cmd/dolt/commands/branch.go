@@ -126,6 +126,7 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 		}
 	}
 
+	// createBranch and deleteBranches both call DOLT_BRANCH, but differ in their validation logic.
 	switch {
 	case apr.Contains(cli.MoveFlag):
 		return createBranch(sqlCtx, queryEngine, apr, args, usage)
