@@ -68,7 +68,7 @@ SAVEPOINT tx1;
 EOF
 )
 
-    start_sql_server >> server_log.txt 2>&1
+    start_sql_server 
     run dolt sql-client -P $PORT -u dolt --use-db '' -q "$SAVEPOINT_QUERY"
     [ $status -eq 0 ]
 }
@@ -1760,7 +1760,7 @@ s.close()
 
     mkdir nodb
     cd nodb
-    start_sql_server >> server_log.txt 2>&1
+    start_sql_server 
 
     dolt sql-client -P $PORT -u dolt --use-db '' -q "CREATE DATABASE mydb1"
     dolt sql-client -P $PORT -u dolt --use-db '' -q "CREATE DATABASE mydb2"
@@ -1795,7 +1795,7 @@ s.close()
     cd mydb
     dolt init
 
-    start_sql_server >> server_log.txt 2>&1
+    start_sql_server 
     # 'doltdb' will be nested database inside 'mydb'
     dolt sql-client -P $PORT -u dolt --use-db '' -q "CREATE DATABASE doltdb"
     run dolt sql-client -P $PORT -u dolt --use-db '' -q "SHOW DATABASES"
@@ -1826,7 +1826,7 @@ s.close()
     run dolt sql -q "SHOW DATABASES"
     [[ "$output" =~ "mydb" ]] || false
 
-    start_sql_server >> server_log.txt 2>&1
+    start_sql_server 
     dolt sql-client -P $PORT -u dolt --use-db '' -q "DROP DATABASE mydb;"
 
     run grep "database not found: mydb" server_log.txt
@@ -1844,7 +1844,7 @@ s.close()
     mkdir mydbs
     cd mydbs
 
-    start_sql_server >> server_log.txt 2>&1
+    start_sql_server 
     dolt sql-client -P $PORT -u dolt --use-db '' -q "CREATE DATABASE mydb1;"
     [ -d mydb1 ]
 
@@ -1867,7 +1867,7 @@ s.close()
     dolt init
     cd ..
 
-    start_sql_server >> server_log.txt 2>&1
+    start_sql_server 
     dolt sql-client -P $PORT -u dolt --use-db '' -q "DROP DATABASE my_db;"
 
     run grep "database not found: my_db" server_log.txt
