@@ -242,6 +242,10 @@ func validateBranchNotActiveInAnySession(ctx *sql.Context, branchName string) er
 	branchRef := ref.NewBranchRef(branchName)
 
 	return sessionManager.Iter(func(session sql.Session) (bool, error) {
+		if session.ID() == ctx.Session.ID() {
+			return false, nil
+		}
+
 		dsess, ok := session.(*dsess.DoltSession)
 		if !ok {
 			return false, fmt.Errorf("unexpected session type: %T", session)
