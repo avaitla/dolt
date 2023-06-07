@@ -22,7 +22,9 @@ import (
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions/commitwalk"
+	"github.com/dolthub/dolt/go/libraries/utils/iohelp"
 	"github.com/dolthub/dolt/go/store/hash"
+	"github.com/dolthub/go-mysql-server/sql"
 
 	"github.com/dolthub/dolt/go/cmd/dolt/cli"
 	"github.com/dolthub/dolt/go/cmd/dolt/errhand"
@@ -63,6 +65,15 @@ func (cmd StatusCmd) ArgParser() *argparser.ArgParser {
 
 // Exec executes the command
 func (cmd StatusCmd) Exec(ctx context.Context, commandStr string, args []string, dEnv *env.DoltEnv, cliCtx cli.CliContext) int {
+	_, sqlCtx, closeFunc, err := cliCtx.QueryEngine(ctx)
+	if err != nil {
+		iohelp.WriteLine(cli.CliOut, err.Error())
+		return 1
+	}
+	if closeFunc != nil {
+		defer closeFunc()
+	}
+
 	ap := cmd.ArgParser()
 	help, _ := cli.HelpAndUsagePrinters(cli.CommandDocsForCommandString(commandStr, statusDocs, ap))
 	apr := cli.ParseArgsOrDie(ap, args, help)
@@ -87,14 +98,14 @@ func (cmd StatusCmd) Exec(ctx context.Context, commandStr string, args []string,
 		handleStatusVErr(err)
 	}
 
-	err = PrintStatus(ctx, dEnv, staged, notStaged, apr.Contains(cli.ShowIgnoredFlag), as)
+	err = PrintStatus(ctx, sqlCtx, dEnv, staged, notStaged, apr.Contains(cli.ShowIgnoredFlag), as)
 	if err != nil {
 		return handleStatusVErr(err)
 	}
 	return 0
 }
 
-func PrintStatus(ctx context.Context, dEnv *env.DoltEnv, stagedTbls, notStagedTbls []diff.TableDelta, showIgnoredTables bool, as merge.ArtifactStatus) error {
+func PrintStatus(ctx context.Context, sqlCtx *sql.Context, dEnv *env.DoltEnv, stagedTbls, notStagedTbls []diff.TableDelta, showIgnoredTables bool, as merge.ArtifactStatus) error {
 	headRef, err := dEnv.RepoStateReader().CWBHeadRef()
 	if err != nil {
 		return err
@@ -125,7 +136,7 @@ func PrintStatus(ctx context.Context, dEnv *env.DoltEnv, stagedTbls, notStagedTb
 	}
 
 	n := printStagedDiffs(cli.CliOut, stagedTbls, true)
-	n, err = PrintDiffsNotStaged(ctx, dEnv, cli.CliOut, notStagedTbls, true, showIgnoredTables, n, as)
+	n, err = PrintDiffsNotStaged(ctx, sqlCtx, cli.CliOut, notStagedTbls, true, showIgnoredTables, n, as)
 	if err != nil {
 		return err
 	}
