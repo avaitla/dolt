@@ -108,7 +108,7 @@ func (cmd BranchCmd) Exec(ctx context.Context, commandStr string, args []string,
 
 	queryEngine, sqlCtx, closeFunc, err := cliCtx.QueryEngine(ctx)
 	if err != nil {
-		return HandleVErrAndExitCode(errhand.BuildDError("error: failed create query engine").AddCause(err).Build(), nil)
+		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to create query engine").AddCause(err).Build(), nil)
 	}
 
 	if closeFunc != nil {
