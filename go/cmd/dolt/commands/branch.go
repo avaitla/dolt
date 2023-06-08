@@ -320,9 +320,9 @@ func printAllDatasets(ctx context.Context, dEnv *env.DoltEnv) int {
 	return 0
 }
 
-// generateSql returns the query that will call the `DOLT_BRANCH` stored procedure.
+// generateBranchSql returns the query that will call the `DOLT_BRANCH` stored procedure.
 // This function assumes that the inputs are validated branch names or flags, neither of which can contain quotes.
-func generateSql(args []string) string {
+func generateBranchSql(args []string) string {
 	var buffer bytes.Buffer
 	var first bool
 	first = true
@@ -437,7 +437,7 @@ func deleteBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, apr *argparse
 }
 
 func runQuery(sqlCtx *sql.Context, queryEngine cli.Queryist, args []string) int {
-	query := generateSql(args)
+	query := generateBranchSql(args)
 	schema, rowIter, err := queryEngine.Query(sqlCtx, query)
 	if err != nil {
 		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to run query %s", query).AddCause(err).Build(), nil)
